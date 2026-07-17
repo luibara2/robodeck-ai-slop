@@ -1,98 +1,73 @@
-// ROBODECK - FULLY OFFLINE, SPLIT-MODULE BUILD
-// =============================================================================
-// No Wi-Fi/server/clock. Every input device (D-pad, joystick, slider, buzzer,
-// gyro) is turned on/off and re-pinned from the single CONFIG block below, so
-// the same firmware runs on deck variants with different hardware fitted.
-//
-// Games are separate files under ./games and are dynamically imported only
-// when selected. The menu firmware no longer parses or rewrites every game at
-// startup, and replaying a game reuses the same module path instead of creating
-// g0.js, g1.js, g2.js... cached copies.
-// =============================================================================
 import { createSaturn, SaturnPins } from "saturn";
 import * as colors from "colors";
 import { Button } from "button";
 import * as adc from "adc";
-// These are Saturn runtime libraries and are always resolvable. Only the
-// PIEZO/MPU6050 *devices* are optional - construction happens further down and
-// only when the matching CONFIG block is enabled. If a particular board build
-// genuinely ships without one of these modules, comment its import out and set
-// the corresponding `enabled: false`.
+
 import { PIEZO, Effects, Volume } from "piezo";
 import { MPU6050 } from "mpu6050";
 import { I2C1 } from "i2c";
 
+
 // ============================================================================
-// HARDWARE CONFIG  -  edit this block to match your deck.
+// HARDWARE CONFIG - edit this block to match your deck.
 // ----------------------------------------------------------------------------
-// Every peripheral has an `enabled` flag plus its pins and orientation. Turn a
-// device off and the firmware substitutes a safe stub; games that hard-require
-// it (e.g. gyro games) show their own "missing hardware" message instead of
-// crashing. Nothing outside this block needs editing to re-pin the deck.
+// Configure the display rotation, enabled devices, pins, and orientation here.
+// Disabled hardware uses a safe fallback so games continue running without it.
 //
-//   * enabled  - is this hardware physically fitted on your board?
-//   * pmod/pin - which header/pin it is wired to (see SaturnPins.PmodN.PinM)
-//   * invert*  - flip an axis/direction (use for 180-degree or mirrored mounts)
-//   * swapXY   - exchange the X and Y axes (for a chip rotated 90 degrees)
+//   * rotation - display rotation: 0, 1, 2, or 3
+//   * enabled  - whether the hardware is physically fitted
+//   * pmod/pin - the header and pin used by the device
+//   * invert*  - reverse an axis or direction
+//   * swapXY   - exchange the X and Y axes
 // ============================================================================
+
 const CONFIG = {
-  // --- D-PAD : four momentary buttons ---------------------------------------
+
+  display: {
+    rotation: 0,
+  },
+
   dpad: {
     enabled: true,
     pmod: SaturnPins.Pmod1,
-    // Physical pin -> logical direction. The default order matches this deck's
-    // 180-degree mounting (left/right/up/down already reversed). Re-map here if
-    // your buttons are wired or oriented differently.
+
     pins: { up: "Pin3", down: "Pin2", left: "Pin1", right: "Pin4" },
   },
 
-  // --- JOYSTICK : analog X/Y + push-to-click --------------------------------
   joystick: {
     enabled: true,
     pmod: SaturnPins.Pmod2,
     xPin: "Pin1",
     yPin: "Pin2",
     clickPin: "Pin4",
-    invertX: true,    // 180-degree mount -> reverse left/right
-    invertY: false,   // set true to reverse up/down
-    swapXY: false,    // set true if the stick is physically rotated 90 degrees
-    deadzone: 0.15,   // readings smaller than this are treated as centred
+    invertX: true,
+    invertY: false,
+    swapXY: false,
+    deadzone: 0.15,
   },
 
-  // --- SLIDER : linear analog potentiometer ---------------------------------
   slider: {
     enabled: true,
     pin: SaturnPins.Pmod3.Pin5,
-    invert: true,     // "slider rotation": flip which end reads as 0 vs 1
+    invert: true,
   },
 
-  // --- PIEZO / BUZZER : sound effects ---------------------------------------
-  // Leave disabled on decks with no buzzer; games stay silent but keep working.
   piezo: {
     enabled: false,
     pin: SaturnPins.Pmod2.Pin1,
-    volume: "MID",    // "LOW" | "MID" | "HIGH"  (keys of the piezo Volume enum)
+    volume: "MID",
   },
 
-  // --- GYRO / ACCELEROMETER : MPU6050 over I2C ------------------------------
-  // Leave disabled on decks with no motion sensor. When enabled, games get
-  // mpu.getAcceleration() and mpu.getRotation(); the invert/swap options below
-  // are applied to both so the whole system shares one orientation.
   gyro: {
     enabled: false,
     scl: 21,
     sda: 14,
-    invertX: false,   // flip tilt/rotation left-right
-    invertY: false,   // flip tilt/rotation up-down
-    swapXY: false,    // exchange X and Y (chip mounted rotated 90 degrees)
+    invertX: false,
+    invertY: false,
+    swapXY: false,
   },
 };
-// ============================================================================
 
-// ==== OFFLINE GAME INDEX =====================================================
-// Only this small list is parsed at boot. Every game is a separate module and
-// is imported only when selected. Stable paths also prevent duplicate module
-// instances from accumulating when a game is launched repeatedly.
 const GAME_LIST: { id: string; name: string; color: number[] }[] = [{"id":"snake","name":"SNAKE","color":[0,255,0]},{"id":"flap","name":"FLAP","color":[255,220,0]},{"id":"dino","name":"DINO","color":[80,255,100]},{"id":"ski","name":"SKI","color":[80,180,255]},{"id":"dash","name":"DASH","color":[0,220,255]},{"id":"simon","name":"SIMON","color":[255,220,0]},{"id":"tetris","name":"TETRIS","color":[0,200,255]},{"id":"astro","name":"ASTRO","color":[180,80,255]},{"id":"break","name":"BREAK","color":[255,100,0]},{"id":"pong","name":"PONG","color":[0,200,255]},{"id":"race","name":"RACE","color":[200,0,255]},{"id":"stack","name":"STACK","color":[0,255,150]},{"id":"shoot","name":"SHOOT","color":[255,0,120]},{"id":"maze","name":"MAZE","color":[0,180,255]},{"id":"catch","name":"CATCH","color":[0,255,150]},{"id":"cross","name":"CROSS","color":[100,230,80]},{"id":"2048","name":"2048","color":[255,180,0]},{"id":"beat","name":"BEAT","color":[255,0,180]}];
 
 type GameModule = { default?: (api: any) => Promise<void>; run?: (api: any) => Promise<void> };
@@ -116,43 +91,32 @@ const GAME_LOADERS: Record<string, () => Promise<GameModule>> = {
   "2048": () => import("./games/2048.js"),
   "beat": () => import("./games/beat.js"),
 };
-// =============================================================================
 
 const saturn = createSaturn();
 const display = saturn.display;
 
-// Saturn's HUB75 display exposes an RGB888 framebuffer. Writing directly to
-// that ArrayBuffer avoids thousands of JS -> native setPixel() calls per frame.
-// Direct framebuffer writes bypass Display.setPixel(), so we must apply the
-// display's configured rotation ourselves. Without this mapping the whole UI
-// appears rotated by 90 degrees on Saturn.
 const DISPLAY_WIDTH = display.width;
 const DISPLAY_HEIGHT = display.height;
-const DISPLAY_ROTATION = display.rotation;
+const DISPLAY_ROTATION = CONFIG.display.rotation;
 const FRAME = new Uint8Array(display.frame);
 
-// Precompute the RGB byte offset for every logical pixel. This restores
-// Saturn's normal orientation without adding rotation arithmetic to every
-// pixel written by the menu and games.
 const PIXEL_BYTE_INDEX = new Int32Array(DISPLAY_WIDTH * DISPLAY_HEIGHT);
 for (let y = 0; y < DISPLAY_HEIGHT; y++) {
 for (let x = 0; x < DISPLAY_WIDTH; x++) {
 let px = x;
 let py = y;
 if (DISPLAY_ROTATION === 1) {
-// Direct framebuffer coordinates need the inverse of Display.setPixel()'s
-// configured rotation.
+
 px = DISPLAY_WIDTH - 1 - y;
 py = x;
-} else if (DISPLAY_ROTATION === -1 || DISPLAY_ROTATION === 3) {
+} else if (DISPLAY_ROTATION === 3) {
 px = y;
 py = DISPLAY_HEIGHT - 1 - x;
-} else if (DISPLAY_ROTATION === 2 || DISPLAY_ROTATION === -2) {
+} else if (DISPLAY_ROTATION === 2) {
 px = DISPLAY_WIDTH - 1 - x;
 py = DISPLAY_HEIGHT - 1 - y;
 }
 
-// Rotate the final physical framebuffer position by 180 degrees.
 px = DISPLAY_WIDTH - 1 - px;
 py = DISPLAY_HEIGHT - 1 - py;
 
@@ -167,10 +131,6 @@ FRAME[i + 1] = (color >> 8) & 0xff;
 FRAME[i + 2] = color & 0xff;
 }
 
-// --- PIEZO / BUZZER setup ---------------------------------------------------
-// `Effects` is just a bag of song ids (no hardware) so it is always available.
-// `piezo` is a real driver when a buzzer is fitted and CONFIG.piezo.enabled, or
-// a harmless stub otherwise, so games can call piezo.playSong(...) either way.
 const piezoStub: any = { playSong() {}, playNote() {}, stop() {}, tone() {} };
 let piezo: any = piezoStub;
 if (CONFIG.piezo.enabled) {
@@ -185,18 +145,13 @@ if (CONFIG.piezo.enabled) {
   }
 }
 
-// --- GYRO / ACCELEROMETER setup ---------------------------------------------
-// When enabled and detected, `mpu` exposes getAcceleration() and getRotation(),
-// each returning an [x, y, z] array with the configured orientation applied.
-// When disabled or not found, `mpu` is null and gyro games show "NO GRO".
 let mpu: any = null;
 if (CONFIG.gyro.enabled) {
   try {
     I2C1.setup({ scl: CONFIG.gyro.scl, sda: CONFIG.gyro.sda });
     const dev: any = new MPU6050(I2C1);
     const g = CONFIG.gyro;
-    // Apply the configured mounting orientation. Accepts either an [x,y,z]
-    // array or an {x,y,z} object and always returns an array games can destructure.
+
     const orient = (v: any): number[] => {
       const a = Array.isArray(v)
         ? v.slice()
@@ -213,7 +168,7 @@ if (CONFIG.gyro.enabled) {
       raw: dev,
       getAcceleration(): number[] { return orient(dev.getAcceleration()); },
       getRotation(): number[] {
-        // Not every driver build exposes gyro rates; fall back to zeros.
+
         try { if (typeof dev.getRotation === "function") return orient(dev.getRotation()); } catch (e) {}
         return [0, 0, 0];
       },
@@ -231,15 +186,13 @@ y = Math.round(y);
 if (x < 0 || x >= DISPLAY_WIDTH || y < 0 || y >= DISPLAY_HEIGHT) return;
 writePixelUnchecked(x, y, color as number);
 }
-// Resolve a pin handle from a Pmod object and a "PinN" name string.
+
 function pin(pmod: any, name: string): any { return pmod[name]; }
 
-// Analog input pins, resolved once from CONFIG. Null means "not fitted".
 const JOY_X_PIN = CONFIG.joystick.enabled ? pin(CONFIG.joystick.pmod, CONFIG.joystick.xPin) : null;
 const JOY_Y_PIN = CONFIG.joystick.enabled ? pin(CONFIG.joystick.pmod, CONFIG.joystick.yPin) : null;
 const SLIDER_PIN = CONFIG.slider.enabled ? CONFIG.slider.pin : null;
 
-// Only configure the ADC channels that are actually present.
 if (JOY_X_PIN != null) adc.configure(JOY_X_PIN);
 if (JOY_Y_PIN != null) adc.configure(JOY_Y_PIN);
 if (SLIDER_PIN != null) adc.configure(SLIDER_PIN);
@@ -254,8 +207,7 @@ function makeBtn(pinHandle: any, dir: Dir): Button {
 const b = new Button(pinHandle);
 b.on("press", () => {
 const now = Date.now();
-// Button already has 30 ms GPIO debounce. This extra state guard prevents a
-// duplicate logical press from reaching the menu before a real release.
+
 if (held[dir] || now - lastAcceptedPress[dir] < 70) return;
 held[dir] = true;
 lastAcceptedPress[dir] = now;
@@ -265,7 +217,7 @@ dpadHandler(dir);
 b.on("release", () => { held[dir] = false; });
 return b;
 }
-// Build the D-pad from the configured pin -> direction mapping.
+
 if (CONFIG.dpad.enabled) {
 const dp = CONFIG.dpad;
 makeBtn(pin(dp.pmod, dp.pins.up), "up");
@@ -279,7 +231,7 @@ if (CONFIG.joystick.enabled) {
 const joyBtn = new Button(pin(CONFIG.joystick.pmod, CONFIG.joystick.clickPin));
 joyBtn.on("press", () => joyClickHandler());
 }
-// Read one analog axis, centred to -1..1, with optional inversion.
+
 function readAxis(pinHandle: any, invert: boolean): number {
 if (pinHandle == null) return 0;
 let v = (adc.read(pinHandle) - 511.5) / 511.5;
@@ -288,7 +240,7 @@ return invert ? -v : v;
 function joyX(): number {
 if (!CONFIG.joystick.enabled) return 0;
 const j = CONFIG.joystick;
-// swapXY makes the physical Y wire drive logical X (and vice versa).
+
 const v = j.swapXY ? readAxis(JOY_Y_PIN, j.invertY) : readAxis(JOY_X_PIN, j.invertX);
 return Math.abs(v) < j.deadzone ? 0 : v;
 }
@@ -298,8 +250,7 @@ const j = CONFIG.joystick;
 const v = j.swapXY ? readAxis(JOY_X_PIN, j.invertX) : readAxis(JOY_Y_PIN, j.invertY);
 return Math.abs(v) < j.deadzone ? 0 : v;
 }
-// Normalize the physical slider to 0..1. CONFIG.slider.invert flips which end
-// reads as 0 vs 1. Returns 0 when no slider is fitted.
+
 function sliderPos(): number {
 if (!CONFIG.slider.enabled || SLIDER_PIN == null) return 0;
 let v = adc.read(SLIDER_PIN) / 1023;
@@ -382,15 +333,12 @@ FRAME[i + 2] = b;
 }
 }
 
-// A capped fixed-step scheduler. Unlike the official GameLoop, which runs an
-// unbounded setInterval(..., 0) and redraws every tick, this lets the menu poll
-// input predictably without continuously flooding the display.
 async function waitForNextTick(nextTick: number, stepMs: number): Promise<number> {
 nextTick += stepMs;
 const wait = nextTick - Date.now();
 if (wait > 0) await sleep(wait);
 else {
-// Yield once if work overran, then reset the schedule so lag cannot accumulate.
+
 await sleep(0);
 nextTick = Date.now();
 }
@@ -412,7 +360,6 @@ let curGameName = "";
 let scoreSubmitted = false;
 let lastScore = -1;
 
-// Menu built from the embedded game list. Best scores live in memory only.
 let games: { id: string; name: string; color: number[] }[] = [];
 const bests: Record<string, number> = {};
 
@@ -479,10 +426,6 @@ const MENU_TITLE_COLOR = colors.rgb(90,180,255);
 const MENU_DIM_TEXT = colors.rgb(150,150,150);
 const MENU_SCROLL_COLOR = colors.rgb(90,90,90);
 
-// The old menu continuously redrew the complete display every 60 ms even when
-// nothing changed. On this small device display.show() and hundreds of JS-to-
-// native pixel calls are the expensive part. This version only draws when the
-// selected item changes, when entering the menu, or for the short select flash.
 function drawMenuFrame(sel: number, top: number, flash = false) {
 display.clear();
 const n = games.length;
@@ -546,8 +489,6 @@ let joyBlockedUntil = 0;
 let nextTick = Date.now();
 exitRequested = false;
 
-// Do not carry a held exit/menu button into the new menu. This also prevents
-// the release after leaving a game from being interpreted as menu navigation.
 dpadHandler = () => {};
 joyClickHandler = () => {};
 const releaseDeadline = Date.now() + 600;
@@ -573,8 +514,7 @@ piezo.playSong(Effects.menuMove);
 };
 const menuDpad = (d: Dir) => {
 const now = Date.now();
-// A D-pad press owns vertical navigation for a short window. Without this,
-// the same action could be followed by one joystick-poll movement in the loop.
+
 joyBlockedUntil = now + 280;
 joyArmed = false;
 if (d === "up" && !held.down) {
@@ -631,8 +571,6 @@ continue;
 } else holdUDSince = 0;
 }
 
-// Button auto-repeat starts only after a deliberate long hold. A normal tap is
-// handled exactly once by menuDpad above.
 const nextBtnDir = held.up && !held.down ? -1 : held.down && !held.up ? 1 : 0;
 if (nextBtnDir === 0) {
 btnDir = 0;
@@ -645,9 +583,6 @@ move(btnDir);
 lastBtnMove = now;
 }
 
-// Joystick navigation is edge-triggered: one movement per tilt, then it must
-// return near the centre before another movement can happen. D-pad activity
-// temporarily blocks this path so one physical button press cannot move twice.
 const jy = joyY();
 if (Math.abs(jy) < 0.30) {
 joyArmed = true;
@@ -666,7 +601,6 @@ drawMenuFrame(sel, top, false);
 dirty = false;
 }
 
-// 50 Hz input loop, but display output is still only sent when dirty.
 nextTick = await waitForNextTick(nextTick, 20);
 }
 
