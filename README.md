@@ -8,10 +8,13 @@ slider, buzzer, gyro) is turned on/off and re-pinned from a single `CONFIG`
 block at the top of `index.ts`, so the same firmware runs on deck variants with
 different hardware fitted.
 
-> Coming from the networked build? This version has **no `deck-firmware.ts`, no
-> `server.js`, no leaderboard, and no gallery**. Games are bundled on the device
-> and everything runs standalone. There's nothing to configure for WiFi or a
-> server here.
+> Coming from the **[networked build](https://github.com/luibara2/robodeck-server-version)**?
+> This version has **no `deck-firmware.ts`, no `server.js`, no leaderboard, and no
+> gallery**. Games are bundled on the device and everything runs standalone.
+> There's nothing to configure for WiFi or a server here.
+>
+> Want a better version with more games and server-side game loading? Check out
+> **[robodeck-server-version](https://github.com/luibara2/robodeck-server-version)**.
 
 ---
 
