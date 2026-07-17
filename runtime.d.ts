@@ -32,9 +32,6 @@ declare module "mpu6050" {
     getRotation?(): number[];
   }
 }
-declare module "i2c" {
-  export const I2C1: { setup(opts: { scl: number; sda: number }): void };
-}
+
 // Saturn runtime globals (injected by the host, not imported).
 declare function sleep(ms: number): Promise<void>;
-declare const console: { log(...args: any[]): void };
